@@ -196,12 +196,21 @@ public class UserApp extends Controller {
             if(StringUtils.isEmpty(redirectUrl)){
                 return redirect(routes.Application.index());
             } else {
-                return redirect(redirectUrl);
+                return redirect(encodedPath(redirectUrl));
             }
         }
 
         flash(Constants.WARNING, "user.login.invalid");
         return redirect(routes.UserApp.loginForm());
+    }
+
+    private static String encodedPath(String path){
+        String[] paths = path.split("/");
+        String[] encodedPaths = new String[paths.length];
+        for (int i=0; i< paths.length; i++) {
+            encodedPaths[i] = HttpUtil.encodeUrlString(paths[i]);
+        }
+        return String.join("/", encodedPaths);
     }
 
     /**
@@ -841,8 +850,11 @@ public class UserApp extends Controller {
 
     public static boolean isUseSignUpConfirm(){
         Configuration config = play.Play.application().configuration();
-        String useSignUpConfirm = config.getString("signup.require.confirm");
-        return useSignUpConfirm != null && useSignUpConfirm.equals("true");
+        Boolean useSignUpConfirm = config.getBoolean("signup.require.admin.confirm");
+        if(useSignUpConfirm == null) {
+            useSignUpConfirm = config.getBoolean("signup.require.confirm", false); // for compatibility under v1.1
+        }
+        return useSignUpConfirm;
     }
 
     private static void setupRememberMe(User user) {

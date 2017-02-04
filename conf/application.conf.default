@@ -21,6 +21,10 @@ application.siteName="Yona"
 # want to allow that, set signup.require.confirm to true.
 application.allowsAnonymousAccess=true
 
+# If you wants to make the user available to use yona
+# after the server administrator approved,uncomment below
+# signup.require.admin.confirm = true
+
 # Notification
 # ~~~~~
 # Notfication email is delivered by default.
@@ -168,9 +172,6 @@ imap.folder = inbox
 %prod.application.log=INFO
 %prod.application.mode=prod
 
-#if you want to use sign-up is confirmed by site admin, uncomment below
-#signup.require.confirm = true
-
 # User uploaded temporary files cleanup schedule (sec, default 24hour: 24*60*60 = 86400)
 # application.temporaryfiles.keep-up.time = 86400
 
@@ -257,3 +258,9 @@ application.displayPrivateRepositories = false
 github.allow.migration = false
 github.client.id = "TYPE YOUR GITHUB CILENT ID"
 github.client.secret = "TYPE YOUR GITHUB CILENT SECRET"
+
+
+# Attachment Upload File Size Limit
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 2,147,483,454 bytes = 2Gb
+application.maxFileSize = 2147483454

@@ -20,7 +20,9 @@
  */
 package controllers;
 
+import actions.CodeAccessCheckAction;
 import actions.DefaultProjectCheckAction;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import controllers.annotation.AnonymousCheck;
 import controllers.annotation.IsAllowed;
 import models.Project;
@@ -28,10 +30,12 @@ import models.enumeration.Operation;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.tika.Tika;
 import org.apache.tika.mime.MediaType;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.tmatesoft.svn.core.SVNException;
-import play.mvc.*;
+import play.mvc.Controller;
+import play.mvc.Http;
+import play.mvc.Result;
+import play.mvc.With;
 import playRepository.PlayRepository;
 import playRepository.RepositoryService;
 import utils.ErrorViews;
@@ -47,6 +51,8 @@ import java.net.URLEncoder;
 import java.util.Arrays;
 import java.util.List;
 
+import static utils.HttpUtil.encodeUrlString;
+
 @AnonymousCheck
 public class CodeApp extends Controller {
     public static String hostName;
@@ -58,6 +64,11 @@ public class CodeApp extends Controller {
 
         if (!RepositoryService.VCS_GIT.equals(project.vcs) && !RepositoryService.VCS_SUBVERSION.equals(project.vcs)) {
             return status(Http.Status.NOT_IMPLEMENTED, project.vcs + " is not supported!");
+        }
+
+        // Only members can access code?
+        if(project.isCodeAccessibleMemberOnly && !project.hasMember(UserApp.currentUser())) {
+            return forbidden(ErrorViews.Forbidden.render("error.forbidden", project));
         }
 
         PlayRepository repository = RepositoryService.getRepository(project);
@@ -81,7 +92,7 @@ public class CodeApp extends Controller {
         return redirect(routes.CodeApp.codeBrowserWithBranch(userName, projectName, defaultBranch, ""));
     }
 
-    @With(DefaultProjectCheckAction.class)
+    @With(CodeAccessCheckAction.class)
     public static Result codeBrowserWithBranch(String userName, String projectName, String branch, String path)
         throws UnsupportedOperationException, IOException, SVNException, GitAPIException, ServletException {
         Project project = Project.findByOwnerAndProjectName(userName, projectName);
@@ -105,7 +116,7 @@ public class CodeApp extends Controller {
         return ok(view.render(project, branches, recursiveData, branch, path));
     }
 
-    @With(DefaultProjectCheckAction.class)
+    @With(CodeAccessCheckAction.class)
     public static Result ajaxRequest(String userName, String projectName, String path) throws Exception{
         PlayRepository repository = RepositoryService.getRepository(userName, projectName);
         path = HttpUtil.decodePathSegment(path);
@@ -118,7 +129,39 @@ public class CodeApp extends Controller {
         }
     }
 
-    @With(DefaultProjectCheckAction.class)
+    @With(CodeAccessCheckAction.class)
+    public static Result download(String userName, String projectName, String branch, String path)
+            throws UnsupportedOperationException, IOException, SVNException, GitAPIException, ServletException {
+        Project project = Project.findByOwnerAndProjectName(userName, projectName);
+
+        if (!RepositoryService.VCS_GIT.equals(project.vcs) && !RepositoryService.VCS_SUBVERSION.equals(project.vcs)) {
+            return status(Http.Status.NOT_IMPLEMENTED, project.vcs + " is not supported!");
+        }
+
+        final String targetBranch = HttpUtil.decodePathSegment(branch);
+        final String targetPath = HttpUtil.decodePathSegment(path);
+
+        PlayRepository repository = RepositoryService.getRepository(project);
+        List<ObjectNode> recursiveData = RepositoryService.getMetaDataFromAncestorDirectories(
+                repository, targetBranch, targetPath);
+
+        if (recursiveData == null) {
+            return notFound(ErrorViews.NotFound.render());
+        }
+
+        // Prepare a chunked text stream
+        Chunks<byte[]> chunks = new ByteChunks() {
+            // Called when the stream is ready
+            public void onReady(Chunks.Out<byte[]> out) {
+                repository.getArchive(out, targetBranch);
+            }
+        };
+
+        response().setHeader("Content-Disposition", "attachment; filename=" + projectName + "-" + branch + ".zip");
+        return ok(chunks);
+    }
+
+    @With(CodeAccessCheckAction.class)
     public static Result ajaxRequestWithBranch(String userName, String projectName, String branch, String path)
             throws UnsupportedOperationException, IOException, SVNException, GitAPIException, ServletException{
         CodeApp.hostName = request().host();
@@ -134,7 +177,7 @@ public class CodeApp extends Controller {
         }
     }
 
-    @With(DefaultProjectCheckAction.class)
+    @With(CodeAccessCheckAction.class)
     public static Result showRawFile(String userName, String projectName, String revision, String path) throws Exception{
         path = HttpUtil.decodePathSegment(path);
         revision = HttpUtil.decodePathSegment(revision);
@@ -154,7 +197,7 @@ public class CodeApp extends Controller {
         return ok(fileAsRaw).as(mediaTypeString);
     }
 
-    @With(DefaultProjectCheckAction.class)
+    @With(CodeAccessCheckAction.class)
     public static Result showImageFile(String userName, String projectName, String revision, String path) throws Exception{
         revision = HttpUtil.decodePathSegment(revision);
         path = HttpUtil.decodePathSegment(path);
@@ -174,7 +217,7 @@ public class CodeApp extends Controller {
         if (project == null) {
             return null;
         } else if (RepositoryService.VCS_GIT.equals(project.vcs)) {
-            return utils.Url.createWithContext(Arrays.asList(project.owner, project.name));
+            return utils.Url.createWithContext(Arrays.asList(project.owner, encodeUrlString(project.name)));
         } else if (RepositoryService.VCS_SUBVERSION.equals(project.vcs)) {
             return utils.Url.createWithContext(Arrays.asList("svn", project.owner, project.name));
         } else {
